@@ -70,7 +70,7 @@ public class MyHashMap<K, V> {
     }
 
     private void resize() {
-        if (size < table.length * 0.75) {
+        if (size < table.length * factor) {
             return;
         }
         int LengthNew = table.length << 1;
@@ -84,6 +84,7 @@ public class MyHashMap<K, V> {
                 var indexNew = node.key.hashCode() & (tableNew.length - 1);
                 var nodeNew = tableNew[indexNew];
                 if (nodeNew == null) {
+                    // head insert
                     tableNew[indexNew] = node;
                     var next = node.next;
                     node.next = null;
