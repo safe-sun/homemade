@@ -2,22 +2,30 @@ package com.safesun.homemade.spring;
 
 import java.io.File;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.net.URL;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class ApplicationContext {
-    private final Map<String, Object> beanMap = new HashMap<>();
+    private final Map<BeanDefinition, Object> beanMap = new HashMap<>();
 
-    private final Set<String> beanDefinitionNameSet = new HashSet<>();
+    // cache to avoid recursive dependency
+    private final Map<BeanDefinition, Object> initingBeanMap = new HashMap<>();
+
+    private final Map<String, BeanDefinition> beanDefinitionMap = new HashMap<>();
 
     public ApplicationContext(String basePackage) throws Exception {
         initContext(basePackage);
     }
 
     public Object getBean(String beanName) {
-        return beanMap.get(beanName);
+        return beanMap.get(beanDefinitionMap.get(beanName));
     }
 
     public <T> T getBean(Class<T> beanType) {
@@ -36,42 +44,63 @@ public class ApplicationContext {
     }
 
     public void initContext(String basePackage) throws Exception {
-        scanPackage(basePackage).stream().filter(this::canCreate).map(this::wrapBeanDefinition).forEach(this::createBean);
+        scanPackage(basePackage).stream().filter(this::canCreate).forEach(this::wrapBeanDefinition);
+        beanDefinitionMap.values().forEach(this::createBean);
     }
 
-    protected void createBean(BeanDefinition beanDefinition) {
+    protected Object createBean(BeanDefinition beanDefinition) {
         try {
-            String beanName = beanDefinition.getBeanName();
-            if (beanMap.containsKey(beanName)) {
-                return;
+            if (beanMap.containsKey(beanDefinition)) {
+                return beanMap.get(beanDefinition);
             }
-            doCreateBean(beanDefinition);
+            if (initingBeanMap.containsKey(beanDefinition)) {
+                return initingBeanMap.get(beanDefinition);
+            }
+            return doCreateBean(beanDefinition);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
     }
 
-    protected void doCreateBean(BeanDefinition beanDefinition) throws Exception {
+    protected Object doCreateBean(BeanDefinition beanDefinition) throws Exception {
         Constructor<?> constructor = beanDefinition.getConstructor();
         Object bean = constructor.newInstance();
-        if (beanDefinition.getPostMethod() != null) {
-            beanDefinition.getPostMethod().invoke(bean);
+        initingBeanMap.put(beanDefinition, bean);
+
+        autowireBean(bean, beanDefinition);
+
+        Method postMethod = beanDefinition.getPostMethod();
+        if (postMethod != null) {
+            postMethod.invoke(bean);
         }
-        beanMap.put(beanDefinition.getBeanName(), bean);
+        beanMap.put(beanDefinition, initingBeanMap.remove(beanDefinition));
+
+        return bean;
+    }
+
+    protected void autowireBean(Object bean, BeanDefinition beanDefinition) throws Exception {
+        for (Field f : beanDefinition.getAutowireFields()) {
+            f.setAccessible(true);
+            BeanDefinition fieldBeanDefinition = beanDefinitionMap.values().stream()
+                    .filter(o -> f.getType().isAssignableFrom(o.getBeanClass()))
+                    .findFirst()
+                    .orElseThrow(() -> new RuntimeException("autowire fail, bean not found"));
+            Object maybeInitedBean = createBean(fieldBeanDefinition);
+            f.set(bean, maybeInitedBean);
+        }
     }
 
     protected boolean canCreate(Class<?> clazz) {
         return clazz.isAnnotationPresent(Component.class);
     }
 
-    protected BeanDefinition wrapBeanDefinition(Class<?> clazz) {
+    protected void wrapBeanDefinition(Class<?> clazz) {
         try {
             BeanDefinition beanDefinition = new BeanDefinition(clazz);
-            if (beanDefinitionNameSet.contains(beanDefinition.getBeanName())) {
+            if (beanDefinitionMap.containsKey(beanDefinition.getBeanName())) {
                 throw new RuntimeException("bean name is duplicated");
             }
-            beanDefinitionNameSet.add(beanDefinition.getBeanName());
-            return beanDefinition;
+            beanDefinitionMap.put(beanDefinition.getBeanName(), beanDefinition);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }

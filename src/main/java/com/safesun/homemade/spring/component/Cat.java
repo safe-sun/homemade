@@ -7,10 +7,13 @@ import com.safesun.homemade.spring.PostConstruct;
 @Component
 public class Cat {
     @Autowire
+    private Cat cat;
+
+    @Autowire
     private Dog dog;
 
     @PostConstruct
     public void init() {
-        System.out.println("Cat init");
+        System.out.printf("Cat init: [%s, %s]%n", cat, dog);
     }
 }
