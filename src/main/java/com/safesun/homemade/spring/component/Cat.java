@@ -9,7 +9,7 @@ public class Cat {
     @Autowire
     private Cat cat;
 
-    @Autowire
+    @Autowire(required = false)
     private Dog dog;
 
     @PostConstruct

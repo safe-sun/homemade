@@ -1,7 +1,6 @@
 package com.safesun.homemade.spring;
 
 import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 
@@ -9,8 +8,8 @@ public class BeanDefinition {
     private String beanName;
     private Class<?> beanClass;
     private Constructor<?> constructor;
-    private Field[] autowireFields;
-    private Method postMethod;
+    private AutowireField[] autowireFields;
+    private Method customInitMethod;
 
     public BeanDefinition(Class<?> beanClass) {
         try {
@@ -21,12 +20,13 @@ public class BeanDefinition {
 
             autowireFields = Arrays.stream(beanClass.getDeclaredFields())
                     .filter(field -> field.isAnnotationPresent(Autowire.class))
-                    .toArray(Field[]::new);
+                    .map(field -> new AutowireField(field, field.getAnnotation(Autowire.class).required()))
+                    .toArray(AutowireField[]::new);
 
             Arrays.stream(beanClass.getDeclaredMethods())
                     .filter(method -> method.isAnnotationPresent(PostConstruct.class))
                     .findFirst()
-                    .ifPresent(method -> this.postMethod = method);
+                    .ifPresent(method -> this.customInitMethod = method);
         } catch (NoSuchMethodException e) {
             throw new RuntimeException(e);
         }
@@ -40,11 +40,11 @@ public class BeanDefinition {
         return constructor;
     }
 
-    public Method getPostMethod() {
-        return postMethod;
+    public Method getCustomInitMethod() {
+        return customInitMethod;
     }
 
-    public Field[] getAutowireFields() {
+    public AutowireField[] getAutowireFields() {
         return autowireFields;
     }
 
